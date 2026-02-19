@@ -53,7 +53,7 @@ def set_bot_status(sheet, status):
     except: pass
 
 def get_top_safe_tickers():
-    return ["SOL-USD", "NEAR-USD", "RENDER-USD", "FET-USD", "LINK-USD", "DOT-USD", "XRP-USD", "ADA-USD"]
+    return ["SOL-USD", "NEAR-USD", "RENDER-USD", "FET-USD", "LINK-USD", "DOT-USD", "XRP-USD", "ADA-USD", "BTC-USD", "ETH-USD", "BNB-USD", "SUI-USD"]
 
 def analyze_coin_ai(symbol, df_history):
     try:
@@ -170,4 +170,5 @@ if not df_perf.empty:
         st.line_chart(chart_data)
     else:
         st.line_chart(df_perf['Balance'])
+
 
