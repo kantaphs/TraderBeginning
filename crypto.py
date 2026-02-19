@@ -93,8 +93,13 @@ if sheet:
         if recs:
             df_perf = pd.DataFrame(recs)
             if not df_perf.empty and 'Balance' in df_perf.columns:
-                val = df_perf.iloc[-1]['Balance']
-                if val != "": current_bal = float(val)
+                recs_with_balance = df_perf[df_perf['Balance'] != ""] # กรองเฉพาะแถวที่มีตัวเลข
+                if not recs_with_balance.empty:
+                    current_bal = float(recs_with_balance.iloc[-1]['Balance'])
+                else:
+                    current_bal = init_money # ถ้าไม่มีประวัติเลย ให้ใช้งบตั้งต้นที่กรอกมา
+            else:
+                current_bal = init_money # ถ้า Sheet ว่างเปล่า ให้ใช้งบตั้งต้น
     except: pass
 
 # Sidebar
@@ -170,4 +175,5 @@ if not df_perf.empty:
         st.line_chart(chart_data)
     else:
         st.line_chart(df_perf['Balance'])
+
 
