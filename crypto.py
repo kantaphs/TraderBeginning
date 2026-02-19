@@ -11,7 +11,7 @@ from sklearn.ensemble import RandomForestRegressor
 from datetime import datetime, timedelta, timezone
 
 # --- 1. การตั้งค่าหน้าจอ ---
-st.set_page_config(page_title="🦔 Pepper Hunter", layout="wide")
+st.set_page_config(page_title="🦔 Pepper Hunter: Turbo", layout="wide")
 
 # --- 2. ฟังก์ชันสนับสนุน ---
 
@@ -29,15 +29,13 @@ def init_gsheet():
         return None
 
 def get_now_thailand():
-    """ดึงเวลาปัจจุบันในโซนไทย (GMT+7) ในรูปแบบ dd/mm/yyyy hh:mm:ss"""
     now = datetime.now(timezone(timedelta(hours=7)))
     return now.strftime("%d/%m/%Y %H:%M:%S")
 
 def get_live_exchange_rate():
     try:
         ticker = yf.Ticker("THB=X")
-        price = ticker.fast_info['last_price']
-        return round(price, 2)
+        return round(ticker.fast_info['last_price'], 2)
     except: return 35.0
 
 def get_bot_status(sheet):
@@ -53,7 +51,7 @@ def set_bot_status(sheet, status):
     except: pass
 
 def get_top_safe_tickers():
-    return ["SOL-USD", "NEAR-USD", "RENDER-USD", "FET-USD", "LINK-USD", "DOT-USD", "XRP-USD", "ADA-USD"]
+    return ["SOL-USD", "NEAR-USD", "RENDER-USD", "FET-USD", "LINK-USD", "DOT-USD", "XRP-USD", "ADA-USD", "BTC-USD", "ETH-USD", "BNB-USD", "SUI-USD"]
 
 def analyze_coin_ai(symbol, df_history):
     try:
@@ -66,7 +64,7 @@ def analyze_coin_ai(symbol, df_history):
         
         X = df[['Close', 'RSI_14', 'EMA_20', 'EMA_50']].iloc[:-1]
         y = df['Close'].shift(-1).iloc[:-1]
-        model = RandomForestRegressor(n_estimators=50, random_state=42)
+        model = RandomForestRegressor(n_estimators=20, random_state=42) # ลด n เพื่อความเร็ว
         model.fit(X.values, y.values)
         
         last_row = df.iloc[[-1]]
@@ -85,24 +83,28 @@ def analyze_coin_ai(symbol, df_history):
 sheet = init_gsheet()
 current_bal = 1000.0
 df_perf = pd.DataFrame()
+hunting_symbol = None
 
-# ดึงข้อมูลจาก Sheet และจัดการเรื่อง Balance
 if sheet:
     try:
         recs = sheet.get_all_records()
         if recs:
             df_perf = pd.DataFrame(recs)
-            if not df_perf.empty and 'Balance' in df_perf.columns:
-                val = df_perf.iloc[-1]['Balance']
-                if val != "": current_bal = float(val)
+            if not df_perf.empty:
+                if 'Balance' in df_perf.columns:
+                    val = df_perf.iloc[-1]['Balance']
+                    if val != "": current_bal = float(val)
+                # เช็คว่ามีตัวไหนถืออยู่ไหม (HUNTING)
+                h_rows = df_perf[df_perf['สถานะ'] == 'HUNTING']
+                if not h_rows.empty:
+                    hunting_symbol = h_rows.iloc[-1]['เหรียญ']
     except: pass
 
 # Sidebar
 init_money = st.sidebar.number_input("งบตั้งต้น (บาท)", value=1000.0)
 profit_goal = st.sidebar.number_input("กำไรที่ต้องการ (บาท)", value=10000.0)
 live_rate = get_live_exchange_rate()
-st.sidebar.metric("ค่าเงิน USD/THB (Live)", f"{live_rate} ฿")
-st.sidebar.write(f"🕒 อัปเดตล่าสุด: {get_now_thailand()}")
+st.sidebar.metric("ค่าเงิน USD/THB", f"{live_rate} ฿")
 
 bot_active = get_bot_status(sheet) if sheet else False
 if st.sidebar.button("START" if not bot_active else "STOP"):
@@ -111,63 +113,64 @@ if st.sidebar.button("START" if not bot_active else "STOP"):
         st.rerun()
 
 # Dashboard
-st.title("🦔 Pepper Hunter")
+st.title("🦔 Pepper Hunter: Radar")
 target_total = init_money + profit_goal
 profit_now = current_bal - init_money
 
 m1, m2, m3 = st.columns(3)
 m1.metric("งบปัจจุบัน", f"{current_bal:,.2f} ฿", f"{profit_now:,.2f} ฿")
-m2.metric("เป้าหมายเส้นชัย", f"{target_total:,.2f} ฿")
+m2.metric("เป้าหมาย", f"{target_total:,.2f} ฿")
 m3.metric("สถานะบอท", "RUNNING 🟢" if bot_active else "IDLE 🔴")
 
 st.divider()
 
+# --- ส่วน Radar แสดงผลเหรียญ (โชว์ทันที) ---
+st.subheader(f"📡 Hunter's Radar ({get_now_thailand()})")
+tickers = get_top_safe_tickers()
+
+# สร้าง columns รอไว้
+cols = st.columns(4)
+all_picks = []
+
+# สแกนทีละตัวและโชว์ทันที
+for i, sym in enumerate(tickers):
+    with st.spinner(f"กำลังวิเคราะห์ {sym}..."):
+        df_h = yf.download(sym, period="60d", interval="1d", progress=False)
+        if not df_h.empty:
+            res = analyze_coin_ai(sym, df_h)
+            if res:
+                price_thb = res['Price_USD'] * live_rate
+                is_hunting = (sym == hunting_symbol)
+                
+                # โชว์ Card ทันทีใน Column
+                with cols[i % 4]:
+                    border = "2px solid #FF4B4B" if is_hunting else "1px solid #4CAF50"
+                    label = f"{sym} 🎯" if is_hunting else sym
+                    st.markdown(f"""
+                    <div style="border: {border}; padding: 15px; border-radius: 10px; background-color: #1E1E1E; text-align: center; margin-bottom: 10px;">
+                        <h3 style="margin:0;">{label}</h3>
+                        <h1 style="margin:5px 0; color: {'#FF4B4B' if res['Score'] >= 85 else '#4CAF50'};">{res['Score']}</h1>
+                        <p style="margin:0; font-size: 0.9em;">{price_thb:,.2f} ฿</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                all_picks.append(res)
+
+st.divider()
+
+# Logic การทำงาน (ถ้าบอทเปิดอยู่)
 if bot_active:
-    if current_bal >= target_total:
-        st.balloons()
-        st.success(f"🏆 ภารกิจสำเร็จเมื่อ {get_now_thailand()}!")
-        set_bot_status(sheet, False)
-    else:
-        st.subheader(f"🔍 สแกนตลาด ณ เวลา {get_now_thailand()}")
-        all_picks = []
-        tickers = get_top_safe_tickers()
-        
-        with st.status("AI กำลังวิเคราะห์...", expanded=False):
-            for sym in tickers:
-                df_h = yf.download(sym, period="60d", interval="1d", progress=False)
-                if not df_h.empty:
-                    res = analyze_coin_ai(sym, df_h)
-                    if res:
-                        price_thb = res['Price_USD'] * live_rate
-                        if current_bal >= (price_thb * 0.05):
-                            all_picks.append({
-                                "Symbol": sym,
-                                "Price_THB": price_thb,
-                                "Score": res['Score']
-                            })
-        
-        top_6 = sorted(all_picks, key=lambda x: x['Score'], reverse=True)[:6]
-        
-        cols = st.columns(3)
-        for i, coin in enumerate(top_6):
-            with cols[i % 3]:
-                st.info(f"**{coin['Symbol']}**")
-                st.write(f"ราคา: {coin['Price_THB']:,.2f} ฿")
-                st.write(f"AI Score: **{coin['Score']}**")
-                if coin['Score'] >= 85:
-                    st.write("🔥 *Signal: STRONG BUY*")
+    # ตรวจสอบเงื่อนไขซื้อ (กรณีมือว่าง)
+    if not hunting_symbol and all_picks:
+        top_pick = sorted(all_picks, key=lambda x: x['Score'], reverse=True)[0]
+        if top_pick['Score'] >= 85:
+            st.success(f"🔥 สัญญาณซื้อ {top_pick['Symbol']}!")
+            # ตรงนี้คุณสามารถเพิ่มโค้ดบันทึกลง Sheet ได้
+            
+    time.sleep(60)
+    st.rerun()
 
-        # สุ่มเวลาพัก 30-60 วินาที เพื่อความเป็นธรรมชาติ
-        time.sleep(random.randint(30, 60))
-        st.rerun()
-
+# กราฟพอร์ต
 if not df_perf.empty:
     st.subheader("📉 พอร์ตโฟลิโอ")
-    # แสดงกราฟโดยใช้คอลัมน์ Balance และใช้ Timestamp เป็นแกน X (ถ้ามี)
-    if 'Timestamp' in df_perf.columns:
-        df_perf['Timestamp'] = pd.to_datetime(df_perf['Timestamp'], format="%d/%m/%Y %H:%M:%S")
-        chart_data = df_perf.set_index('Timestamp')['Balance']
-        st.line_chart(chart_data)
-    else:
-        st.line_chart(df_perf['Balance'])
-
+    st.line_chart(df_perf['Balance'])
